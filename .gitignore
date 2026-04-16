@@ -1,0 +1,21 @@
+# MATLAB autosave files
+*.asv
+
+# Compiled MEX files
+*.mex*
+
+# Data files
+*.mat
+
+# Figures
+*.fig
+
+# Simulink cache
+slprj/
+*.slxc
+
+# Archive
+*.zip
+*.7z
+*.tar
+*.rar
