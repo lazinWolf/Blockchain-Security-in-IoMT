@@ -1,184 +1,81 @@
 classdef securityUI < handle
     properties
-        Tester
-        Fig
-        LogBox
-        RecordDropdown
-        FogDropdown
-        MetricsLabel
-        
-        % Metrics
-        verifyCount = 0
-        tamperDetected = 0
-        deleteCount = 0
+        Tester, Fig, LogBox, RecordDropdown, FogDropdown, MetricsLabel
+        verifyCount = 0, tamperDetected = 0, deleteCount = 0
     end
     
     methods
         function obj = securityUI(tester)
             obj.Tester = tester;
+            obj.Fig = figure('Name','Security Testing Panel', 'Position',[300 200 520 450]);
             
-            obj.Fig = figure('Name','Security Testing Panel', ...
-                'Position',[300 200 520 450]);
+            uicontrol('Style','text','String','Fog:', 'Position',[20 410 50 20]);
+            fogLabels = arrayfun(@(i) sprintf('Fog %d', i), 1:length(obj.Tester.Fogs), 'UniformOutput', false);
+            obj.FogDropdown = uicontrol('Style','popupmenu', 'Position',[70 410 100 25], 'String', fogLabels, 'Callback', @(~,~) obj.refreshRecords());
             
-            %% --- Fog Selector ---
-            uicontrol('Style','text','String','Fog:', ...
-                'Position',[20 410 50 20]);
+            uicontrol('Style','text','String','Record:', 'Position',[200 410 60 20]);
+            obj.RecordDropdown = uicontrol('Style','popupmenu', 'Position',[260 410 120 25]);
             
-            fogLabels = arrayfun(@(i) sprintf('Fog %d', i), ...
-                1:length(obj.Tester.Fogs), 'UniformOutput', false);
+            obj.MetricsLabel = uicontrol('Style','text', 'Position',[20 370 460 30], 'HorizontalAlignment','left', 'FontWeight','bold');
+            obj.LogBox = uicontrol('Style','listbox', 'Position',[20 20 480 300], 'FontName','Courier', 'FontSize',10);
             
-            obj.FogDropdown = uicontrol('Style','popupmenu', ...
-                'Position',[70 410 100 25], ...
-                'String', fogLabels, ...
-                'Callback', @(~,~) obj.refreshRecords());
+            uicontrol('Style','pushbutton','String','Tamper', 'Position',[20 330 140 30], 'Callback', @(~,~) obj.runTamper());
+            uicontrol('Style','pushbutton','String','Verify', 'Position',[190 330 140 30], 'Callback', @(~,~) obj.runVerify());
+            uicontrol('Style','pushbutton','String','Delete', 'Position',[360 330 140 30], 'Callback', @(~,~) obj.runDelete());
             
-            %% --- Record Selector ---
-            uicontrol('Style','text','String','Record:', ...
-                'Position',[200 410 60 20]);
-            
-            obj.RecordDropdown = uicontrol('Style','popupmenu', ...
-                'Position',[260 410 120 25]);
-            
-            %% --- Metrics Display ---
-            obj.MetricsLabel = uicontrol('Style','text', ...
-                'Position',[20 370 460 30], ...
-                'HorizontalAlignment','left', ...
-                'FontWeight','bold');
-            
-            %% --- Log Box ---
-            obj.LogBox = uicontrol('Style','listbox', ...
-                'Position',[20 20 480 300], ...
-                'FontName','Courier', ...
-                'FontSize',10);
-            
-            %% --- Buttons ---
-            uicontrol('Style','pushbutton','String','Tamper', ...
-                'Position',[20 330 140 30], ...
-                'Callback', @(~,~) obj.runTamper());
-            
-            uicontrol('Style','pushbutton','String','Verify', ...
-                'Position',[190 330 140 30], ...
-                'Callback', @(~,~) obj.runVerify());
-            
-            uicontrol('Style','pushbutton','String','Delete', ...
-                'Position',[360 330 140 30], ...
-                'Callback', @(~,~) obj.runDelete());
-            
-            obj.refreshRecords();
-            obj.updateMetrics();
+            obj.refreshRecords(); obj.updateMetrics();
         end
         
-        %% 🔄 Refresh Records
         function refreshRecords(obj)
             fogIdx = obj.FogDropdown.Value;
-            fog = obj.Tester.Fogs{fogIdx};
-            keysList = fog.OffChainDB.keys;
-            
+            keysList = obj.Tester.Fogs{fogIdx}.OffChainDB.keys;
             if isempty(keysList)
                 obj.RecordDropdown.String = {'No Data'};
-                return;
+                obj.RecordDropdown.UserData = {};
+            else
+                % Show first 8 chars of UUID in UI, but store full UUID in UserData
+                obj.RecordDropdown.String = cellfun(@(k) k(1:8), keysList, 'UniformOutput', false);
+                obj.RecordDropdown.UserData = keysList;
             end
-            
-            labels = cellfun(@(k) sprintf('t=%d', k), keysList, ...
-                'UniformOutput', false);
-            
-            obj.RecordDropdown.String = labels;
         end
         
-        %% 🎯 Get Selection
-        function [key, fogIdx] = getSelection(obj)
+        function [recordID, fogIdx] = getSelection(obj)
             fogIdx = obj.FogDropdown.Value;
-            fog = obj.Tester.Fogs{fogIdx};
-            keysList = fog.OffChainDB.keys;
-            
+            keysList = obj.RecordDropdown.UserData;
             if isempty(keysList)
-                key = [];
-                return;
+                recordID = []; 
+            else
+                recordID = keysList{obj.RecordDropdown.Value}; 
             end
-            
-            idx = obj.RecordDropdown.Value;
-            key = keysList{idx};
         end
         
-        %% 📝 Logging
-        function log(obj, msg)
-            current = obj.LogBox.String;
-            obj.LogBox.String = [current; string(msg)];
-            drawnow;
-        end
+        function log(obj, msg); obj.LogBox.String = [obj.LogBox.String; string(msg)]; end
         
-        %% 📊 Update Metrics Display
         function updateMetrics(obj)
-            fogIdx = obj.FogDropdown.Value;
-            total = length(obj.Tester.Fogs{fogIdx}.OffChainDB.keys);
-            
-            obj.MetricsLabel.String = sprintf( ...
-                'Records: %d | Verified: %d | Tampered: %d | Deleted: %d', ...
+            total = length(obj.Tester.Fogs{obj.FogDropdown.Value}.OffChainDB.keys);
+            obj.MetricsLabel.String = sprintf('Records: %d | Verified: %d | Tampered: %d | Deleted: %d', ...
                 total, obj.verifyCount, obj.tamperDetected, obj.deleteCount);
         end
         
-        %% 🔐 Tamper
         function runTamper(obj)
-            [key, fogIdx] = obj.getSelection();
-            
-            if isempty(key)
-                obj.log("No valid record.");
-                return;
-            end
-            
-            obj.log("----- TAMPER -----");
-            
-            [msg, beforeHR, afterHR] = obj.Tester.tamperData(fogIdx, key);
-            
-            obj.log(msg);
-            obj.log(sprintf("HR: %d → %d", beforeHR, afterHR));
-            obj.log("------------------");
+            [recID, fogIdx] = obj.getSelection(); if isempty(recID); return; end
+            [msg, b, a] = obj.Tester.tamperData(fogIdx, recID);
+            obj.log(msg); obj.log(sprintf("HR: %d -> %d", b, a));
         end
         
-        %% 🔍 Verify
         function runVerify(obj)
-            [key, fogIdx] = obj.getSelection();
-            
-            if isempty(key)
-                obj.log("No valid record.");
-                return;
-            end
-            
-            obj.log("----- VERIFY -----");
-            
-            msg = obj.Tester.verifyData(fogIdx, key);
-            obj.log(msg);
-            
-            % Update metrics
+            [recID, fogIdx] = obj.getSelection(); if isempty(recID); return; end
+            msg = obj.Tester.verifyData(fogIdx, recID); obj.log(msg);
             obj.verifyCount = obj.verifyCount + 1;
-            if contains(msg, "TAMPERING")
-                obj.tamperDetected = obj.tamperDetected + 1;
-            end
-            
+            if contains(msg, "TAMPERING"); obj.tamperDetected = obj.tamperDetected + 1; end
             obj.updateMetrics();
-            obj.log("------------------");
         end
         
-        %% 🧹 Delete
         function runDelete(obj)
-            [key, fogIdx] = obj.getSelection();
-            
-            if isempty(key)
-                obj.log("No valid record.");
-                return;
-            end
-            
-            obj.log("----- DELETE -----");
-            
-            msg = obj.Tester.deleteData(fogIdx, key);
-            obj.log(msg);
-            
+            [recID, fogIdx] = obj.getSelection(); if isempty(recID); return; end
+            obj.log(obj.Tester.deleteData(fogIdx, recID));
             obj.deleteCount = obj.deleteCount + 1;
-            
-            obj.refreshRecords();
-            obj.updateMetrics();
-            
-            obj.log("------------------");
+            obj.refreshRecords(); obj.updateMetrics();
         end
     end
 end

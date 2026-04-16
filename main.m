@@ -1,90 +1,76 @@
-
-% main.m
-
 clc; clear; close all;
 
-%% 1. CONFIGURABLE PARAMETERS
-numEdgeNodes     = 12;  % Total number of IoMT Sensors
-maliciousPercent = 40;  % Percentage of sensors that are hacked
-numFogNodes      = 5;   % Number of Hospital Gateways
-numCloudNodes    = 1;   % Number of Blockchain Consensus Nodes
-numTimeSteps     = 30;  % Total simulation ticks
+%% 1. INITIALIZATION 
+config = simConfig();
+metrics = metricsEngine(); % Initialize the new Metrics Engine
 
 fprintf('--- INITIALIZING NETWORK ---\n');
-fprintf('Edge Nodes: %d | Fog Nodes: %d | Cloud Nodes: %d\n', numEdgeNodes, numFogNodes, numCloudNodes);
-fprintf('Malicious Node Probability: %d%%\n\n', maliciousPercent);
+fprintf('Edge Nodes: %d | Fog Nodes: %d | Cloud Nodes: %d\n', config.numEdgeNodes, config.numFogNodes, config.numCloudNodes);
+fprintf('Malicious Node Probability: %d%%\n\n', config.maliciousPercent);
 
-%% 2. Initialize System Components (Algorithmic Load Balancing)
-sensors = cell(1, numEdgeNodes);
-for i = 1:numEdgeNodes
-    isMal = (rand() * 100) < maliciousPercent; 
-    
-    % ALGORITHMIC ASSIGNMENT: Round-robin distribution to Fog Gateways
-    % e.g., if 4 fogs: Sensor 1->Fog 1, Sensor 5->Fog 1, Sensor 6->Fog 2
-    assignedFog = mod(i-1, numFogNodes) + 1; 
-    
+sensors = cell(1, config.numEdgeNodes);
+for i = 1:config.numEdgeNodes
+    isMal = (rand() * 100) < config.maliciousPercent; 
+    assignedFog = mod(i-1, config.numFogNodes) + 1; 
     sensors{i} = edgeSensor(sprintf('DEV_%d', i), sprintf('PAT_%d', i), isMal, assignedFog);
 end
 
-fogs = cell(1, numFogNodes);
-for i = 1:numFogNodes; fogs{i} = fogGateway(); end
+fogs = cell(1, config.numFogNodes);
+for i = 1:config.numFogNodes; fogs{i} = fogGateway(); end
 
 cloud = cloudBlockchain();
-ui    = networkVis(numEdgeNodes, numFogNodes, numCloudNodes, sensors);
+ui    = networkVis(config.numEdgeNodes, config.numFogNodes, config.numCloudNodes, sensors);
 
-%% 3. Run Simulation Loop
-ui.printLog('[SYSTEM] Network Online. Commencing Data Flow...');
+%% 2. RUN SIMULATION LOOP
+ui.printLog('[SYSTEM] Network Online. Commencing MQTT Data Flow...');
 
-for t = 1:numTimeSteps
-    
-    % Pick a random sensor to transmit its 10-millisecond packet
-    activeSensorIdx = randi([1, numEdgeNodes]);
+for t = 1:config.numTimeSteps
+    activeSensorIdx = randi([1, config.numEdgeNodes]);
     activeSensor = sensors{activeSensorIdx};
+    targetFog = fogs{activeSensor.AssignedFog};
     
-    % Follow ALGORITHMIC route to the Fog node
-    targetFogIdx = activeSensor.AssignedFog;
-    targetFog = fogs{targetFogIdx};
+    % --- TIER 1: EDGE MQTT TRANSMISSION ---
+    tic; % START EDGE TIMER
+    [mqttFrame, vitalsPlaintext, ecgWave, isAttacked] = activeSensor.generateTransmission(config);
+    edgeLatency = toc * 1000; % Convert to ms
     
-    % --- TIER 1: EDGE GENERATES DATA ---
-    [vitals, ecgWave, isAttacked] = activeSensor.readVitals();
-    vitalStr = sprintf('HR:%d SpO2:%d Temp:%.1f', vitals.HR, vitals.SpO2, vitals.Temp);
+    metrics.logEdge(edgeLatency, isAttacked); % LOG METRICS
     
-    % Update Live Wave UI
     ui.plotLiveWave(ecgWave, isAttacked);
+    shortUUID = mqttFrame.Payload.RecordID(1:8);
+    topic = mqttFrame.Topic;
     
     if isAttacked
-        ui.printLog(sprintf('[-] t=%d | %s (HACKED) sent SPOOFED payload [%s] -> FOG %d', t, activeSensor.DeviceID, vitalStr, targetFogIdx));
+        ui.printLog(sprintf('[-] %s sent Spoofed MQTT [%s] on %s', activeSensor.DeviceID, shortUUID, topic));
     else
-        ui.printLog(sprintf('[+] t=%d | %s (Honest) sent valid vitals [%s] -> FOG %d', t, activeSensor.DeviceID, vitalStr, targetFogIdx));
+        ui.printLog(sprintf('[+] %s sent Secure MQTT [%s] on %s', activeSensor.DeviceID, shortUUID, topic));
     end
     
-    % --- TIER 2: FOG RULE-BASED GATEKEEPER ---
-    [isSafe, dataHash] = targetFog.processData(t, vitals, activeSensor.PatientID);
+    % --- TIER 2: FOG Z-SCORE & GATEKEEPER ---
+    tic; % START FOG TIMER
+    [isSafe, dataHash, alertReason] = targetFog.processData(mqttFrame, config);
+    fogLatency = toc * 1000; % Convert to ms
+    
+    metrics.logFog(fogLatency, isSafe, alertReason, mqttFrame); % LOG METRICS
     
     if ~isSafe
-        ui.printLog(sprintf('    >> [SECURITY ALERT] FOG %d Rule-Filter dropped invalid payload! Ledger Protected.', targetFogIdx));
+        ui.printLog(sprintf('    >> [SECURITY ALERT] Dropped: %s', alertReason));
     else
-        ui.printLog(sprintf('    >> [FOG %d] Vitals OK. DB Updated. Broadcast Hash -> %s...', targetFogIdx, dataHash(1:8)));
+        ui.printLog(sprintf('    >> [FOG %d] Z-Score OK. Overhead: %d bytes. Broadcast Hash -> %s', ...
+            activeSensor.AssignedFog, mqttFrame.HeaderBytes, dataHash(1:8)));
         
         % --- TIER 3: CLOUD BLOCKCHAIN ---
         cloud.addBlock(dataHash);
-        ui.printLog(sprintf('    >> [CLOUD] PBFT Consensus Reached. Block %d Secured.', cloud.Chain(end).Index));
-
         ui.updateLedger(cloud.Chain);
     end
     
-    % Animate the topology Flow
-    ui.animateFlow(activeSensorIdx, targetFogIdx, isSafe);
-    drawnow;
-    pause(0.5); 
+    ui.animateFlow(activeSensorIdx, activeSensor.AssignedFog, isSafe);
+    drawnow; pause(0.5); 
 end
+
+%% 3. GENERATE RESULTS REPORT
+metrics.generateReport();
 
 %% 4. SECURITY TEST PANEL
 tester = securityTester(fogs, cloud);
 secUI  = securityUI(tester);
-
-%% 5. Post-Simulation Legal Event (India DPDP Act)
-ui.printLog('------------------------------------------------');
-ui.printLog('[POLICY EVENT] ABDM Compliance: Executing DPDP Erasure for all Fog Nodes...');
-for i = 1:numFogNodes; fogs{i}.functionalErasure(); end
-ui.printLog('[SUCCESS] Raw medical data completely deleted. Blockchain remains intact.');
