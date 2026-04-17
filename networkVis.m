@@ -1,46 +1,54 @@
-%% --- networkVis.m ---
 classdef networkVis < handle
     properties
-        AxECG, AxNet, LogBox, BlockTable, HGraph, Logs = {}
+        AxECG, AxNet, LogBox, BlockTable, HGraph
+        Logs = {}
         NumEdge, NumFog, NumCloud
+        
+        % Continuous ECG Tracking
         GlobalTime = 0
+        ECGBuffer_X = []
+        ECGBuffer_Y = []
     end
     
     methods
         function obj = networkVis(numEdge, numFog, numCloud, sensors)
             obj.NumEdge = numEdge; obj.NumFog = numFog; obj.NumCloud = numCloud;
             
-            % 1. Setup Dark Theme Figure
-            fig = figure('Name', 'IoMT Network Spatial Visualizer', 'Color', [0.1 0.1 0.1], 'Position', [50, 50, 1400, 800]);
+            % 1. MAIN FIGURE SETUP (Dark Cyber-Medical Theme)
+            fig = figure('Name', 'IoMT Blockchain Security Dashboard (v2.1)', ...
+                'Color', [0.08 0.08 0.1], 'Position', [50, 50, 1450, 850]);
             
-            % 2. Dynamic Network Topology Generation (ALGORITHMIC EDGES)
+            % 2. SPATIAL NETWORK TOPOLOGY (Left-to-Right Flow)
             s = []; t = []; names = {}; x_coords = []; y_coords =[];
-            xEdgeVals = linspace(1, 10, numEdge);
-            xFogVals = linspace(3, 8, numFog);
-            xCloudVals = linspace(2, 9, numCloud);
             
-            % Edge Nodes (Y = 1) -> Algorithmic assignment to Fog
+            % Y-Spacing logic
+            yEdge = linspace(10, 1, numEdge);
+            yFog  = linspace(8, 3, numFog);
+            yCloud= linspace(6, 5, numCloud);
+            
+            % Build Edge Nodes
             for i = 1:numEdge
                 names{end+1} = sprintf('E%d', i);
-                x_coords(end+1) = xEdgeVals(i); y_coords(end+1) = 1;
+                x_coords(end+1) = 1; y_coords(end+1) = yEdge(i);
                 s(end+1) = i; 
-                t(end+1) = numEdge + sensors{i}.AssignedFog; % PERFECT SYNC WITH LOGIC
+                t(end+1) = numEdge + sensors{i}.AssignedFog; 
             end
             
-            % Fog Nodes (Y = 3) -> Broadcast to all Clouds
+            % Build Fog Nodes
             for i = 1:numFog
                 names{end+1} = sprintf('FOG %d', i);
-                x_coords(end+1) = xFogVals(i); y_coords(end+1) = 3;
+                x_coords(end+1) = 4; y_coords(end+1) = yFog(i);
                 for c = 1:numCloud
                     s(end+1) = numEdge + i; t(end+1) = numEdge + numFog + c;
                 end
             end
             
-            % Cloud Nodes (Y = 5) -> P2P Consensus Ring
+            % Build Cloud Nodes
             for i = 1:numCloud
                 names{end+1} = sprintf('CLOUD %d', i);
-                x_coords(end+1) = xCloudVals(i); y_coords(end+1) = 5;
+                x_coords(end+1) = 7; y_coords(end+1) = yCloud(i);
                 s(end+1) = numEdge + numFog + i;
+                % Link clouds together for PBFT representation
                 if i == numCloud
                     t(end+1) = numEdge + numFog + 1;
                 else
@@ -48,124 +56,129 @@ classdef networkVis < handle
                 end
             end
             
-            % 3. Draw Spatial Graph (Right Side)
-            obj.AxNet = subplot(4, 4, [2:4, 6:8, 10:12]); hold(obj.AxNet, 'on'); axis(obj.AxNet, 'off');
-            title(obj.AxNet, 'Spatial Network Topology', 'Color', 'w', 'FontSize', 14);
+            % Plot Network
+            obj.AxNet = subplot(4, 4, [2:4, 6:8, 10:12]); hold(obj.AxNet, 'on'); 
+            set(obj.AxNet, 'Color', [0.08 0.08 0.1], 'XColor', 'none', 'YColor', 'none');
+            title(obj.AxNet, 'Live Topology: Edge → Fog → Cloud', 'Color', 'w', 'FontSize', 14);
             
             netGraph = digraph(s, t, [], names);
             obj.HGraph = plot(obj.AxNet, netGraph, 'XData', x_coords, 'YData', y_coords, ...
-                'NodeFontSize', 10, 'NodeFontWeight', 'bold', 'NodeLabelColor', 'w', ...
-                'MarkerSize', 15, 'LineWidth', 1.0, 'EdgeColor', [0.4 0.4 0.4]);
+                'NodeFontSize', 9, 'NodeFontWeight', 'bold', 'NodeLabelColor', 'w', ...
+                'MarkerSize', 16, 'LineWidth', 1.2, 'EdgeColor', [0.3 0.3 0.35], 'EdgeAlpha', 0.5);
             
             % Color Nodes
             for i = 1:numEdge
                 if sensors{i}.IsMalicious
-                    highlight(obj.HGraph, i, 'NodeColor', [0.8 0 0]); 
+                    highlight(obj.HGraph, i, 'NodeColor', [0.7 0.1 0.1]); % Dark Red
                 else
-                    highlight(obj.HGraph, i, 'NodeColor', [0.47 0.67 0.19]); 
+                    highlight(obj.HGraph, i, 'NodeColor', [0.2 0.6 0.3]); % Green
                 end
             end
-            highlight(obj.HGraph, numEdge+1 : numEdge+numFog, 'NodeColor', [0.85 0.33 0.10]); 
-            highlight(obj.HGraph, numEdge+numFog+1 : numEdge+numFog+numCloud, 'NodeColor', [0 0.45 0.74]); 
+            highlight(obj.HGraph, numEdge+1 : numEdge+numFog, 'NodeColor', [0.85 0.45 0.10], 'MarkerSize', 22); % Orange Fog
+            highlight(obj.HGraph, numEdge+numFog+1 : numEdge+numFog+numCloud, 'NodeColor', [0.1 0.5 0.8], 'MarkerSize', 26); % Blue Cloud
             
-            % 4. Live ECG Panel (Top Left)
+            % 3. LIVE ECG MONITOR
             obj.AxECG = subplot(4, 4, [1, 5, 9]); hold(obj.AxECG, 'on'); 
-            set(obj.AxECG, 'Color', 'k', 'XColor', 'w', 'YColor', 'w');
-            title(obj.AxECG, 'Live Sensor Transmission', 'Color', 'w', 'FontSize', 12);
-            ylim(obj.AxECG, [-2 20]); ylabel(obj.AxECG, 'ECG (mV)');
+            set(obj.AxECG, 'Color', 'k', 'XColor', [0.3 0.3 0.3], 'YColor', [0.3 0.3 0.3], 'GridColor', [0 1 0], 'GridAlpha', 0.2);
+            title(obj.AxECG, 'Real-Time ECG Feed', 'Color', 'w', 'FontSize', 12);
+            ylim(obj.AxECG, [-1.5 5.5]); ylabel(obj.AxECG, 'mV');
+            grid(obj.AxECG, 'on');
             
-            % 5. Terminal Log UI (Bottom Left)
+            % 4. TERMINAL LOG BOX
             subplot(4, 4, [13, 14]); axis off;
             obj.LogBox = uicontrol('Style', 'listbox', 'Units', 'normalized', 'Position', [0.02 0.02 0.45 0.22], ...
-                'FontSize', 11, 'BackgroundColor', 'k', 'ForegroundColor', [0 1 0]);
+                'FontSize', 10, 'FontName', 'Consolas', 'BackgroundColor', [0.05 0.05 0.05], ...
+                'ForegroundColor', [0.2 0.9 0.2]); % Hacker Green text
             
-            % 6. Live Blockchain Ledger Table (Bottom Right)
+            % 5. BLOCKCHAIN LEDGER TABLE
             subplot(4, 4, [15, 16]); axis off;
-            obj.BlockTable = uitable('Units', 'normalized', 'Position', [0.50 0.02 0.48 0.22], ...
-                'ColumnName', {'Block', 'Time', 'Data Hash (SHA-256)', 'Prev Hash'}, ...
-                'ColumnWidth', {50, 80, 220, 220}, 'RowName', [], ...
-                'BackgroundColor', [0.1 0.1 0.1; 0.15 0.15 0.15], 'ForegroundColor', 'c');
+            obj.BlockTable = uitable('Units', 'normalized', 'Position', [0.49 0.02 0.49 0.22], ...
+                'ColumnName', {'Block', 'Time', 'Data Hash (Ciphertext)', 'Prev Hash'}, ...
+                'ColumnWidth', {45, 75, 230, 230}, 'RowName', [], ...
+                'BackgroundColor', [0.1 0.1 0.1; 0.15 0.15 0.15], 'ForegroundColor', [0.4 0.8 1.0], ...
+                'FontName', 'Consolas');
         end
         
         function plotLiveWave(obj, ecgWave, isAttacked)
-            % Animate the 10-point wave scrolling across the screen
-            startT = obj.GlobalTime;
-            xVals = startT : startT+9;
+            % Append to continuous buffer
+            len = length(ecgWave);
+            xVals = obj.GlobalTime : obj.GlobalTime + len - 1;
             
-            if isAttacked
-                plot(obj.AxECG, xVals, ecgWave, 'r', 'LineWidth', 2);
-                plot(obj.AxECG, xVals(5), ecgWave(5), 'ro', 'MarkerFaceColor', 'r', 'MarkerSize', 8);
-            else
-                plot(obj.AxECG, xVals, ecgWave, 'c', 'LineWidth', 1.5);
+            obj.ECGBuffer_X = [obj.ECGBuffer_X, xVals];
+            obj.ECGBuffer_Y = [obj.ECGBuffer_Y, ecgWave];
+            
+            % Keep only last 150 points for scrolling effect
+            if length(obj.ECGBuffer_X) > 150
+                obj.ECGBuffer_X = obj.ECGBuffer_X(end-149:end);
+                obj.ECGBuffer_Y = obj.ECGBuffer_Y(end-149:end);
             end
             
-            obj.GlobalTime = obj.GlobalTime + 10;
-            xlim(obj.AxECG, [max(0, obj.GlobalTime-100), max(100, obj.GlobalTime)]);
+            cla(obj.AxECG); % Clear axis
+            if isAttacked
+                plot(obj.AxECG, obj.ECGBuffer_X, obj.ECGBuffer_Y, 'r', 'LineWidth', 2.0);
+            else
+                plot(obj.AxECG, obj.ECGBuffer_X, obj.ECGBuffer_Y, 'Color', [0 1 0.5], 'LineWidth', 1.5);
+            end
+            
+            obj.GlobalTime = obj.GlobalTime + len;
+            xlim(obj.AxECG, [max(0, obj.GlobalTime-150), max(150, obj.GlobalTime)]);
         end
         
         function printLog(obj, msg)
-            disp(msg); % Terminal Output
             obj.Logs{end+1} = msg;
-            if length(obj.Logs) > 10; obj.Logs(1) = []; end
-            set(obj.LogBox, 'String', obj.Logs, 'Value', length(obj.Logs));
+            if length(obj.Logs) > 15; obj.Logs(1) = []; end % Keep last 15 lines
+            set(obj.LogBox, 'String', obj.Logs, 'Value', length(obj.Logs)); % Auto-scroll to bottom
         end
         
         function updateLedger(obj, chain)
-            % Convert the blockchain struct array into a cell array for the UI table
             numBlocks = length(chain);
             tableData = cell(numBlocks, 4);
-            
             for i = 1:numBlocks
                 tableData{i, 1} = chain(i).Index;
-                
-                % CONVERT STRINGS TO CHARS: Fixes the 'set Data' error
-                % 1. Timestamp (converted to char)
                 tsStr = char(chain(i).Timestamp);
-                tableData{i, 2} = tsStr(1:min(10, end)); 
-                
-                % 2. DataHash (converted to char)
+                tableData{i, 2} = tsStr(12:19); % Show only HH:mm:ss for space
                 tableData{i, 3} = char(chain(i).DataHash);
-                
-                % 3. PrevHash (converted to char)
                 tableData{i, 4} = char(chain(i).PrevHash);
             end
-            
-            % Flip the data so the newest blocks appear at the top
+            % Show newest blocks at the top
             set(obj.BlockTable, 'Data', flipud(tableData));
         end
         
         function animateFlow(obj, sourceEdgeIdx, targetFogIdx, isSafe)
             actualFogIdx = obj.NumEdge + targetFogIdx;
             
-            % 1. Edge -> Fog Pulse (Green)
-            highlight(obj.HGraph, sourceEdgeIdx, actualFogIdx, 'EdgeColor', 'g', 'LineWidth', 4);
-            pause(0.15);
+            % 1. Edge to Fog Transmission
+            highlight(obj.HGraph, sourceEdgeIdx, actualFogIdx, 'EdgeColor', [1 0.8 0], 'LineWidth', 3); % Yellow transmit
+            drawnow; pause(0.15);
             
             if ~isSafe
-                % MALWARE DETECTED: Fog Node turns Red
-                highlight(obj.HGraph, actualFogIdx, 'NodeColor', 'r', 'MarkerSize', 25);
-                t_alert = text(obj.AxNet, obj.HGraph.XData(actualFogIdx), obj.HGraph.YData(actualFogIdx)-0.4, ...
-                    '⚠ BLOCKED', 'Color', 'r', 'FontSize', 12, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
-                pause(0.5); delete(t_alert);
-                highlight(obj.HGraph, actualFogIdx, 'NodeColor', [0.85 0.33 0.10], 'MarkerSize', 15);
+                % Blocked at Fog
+                highlight(obj.HGraph, actualFogIdx, 'NodeColor', 'r', 'MarkerSize', 28);
+                highlight(obj.HGraph, sourceEdgeIdx, actualFogIdx, 'EdgeColor', 'r', 'LineWidth', 4);
+                drawnow; pause(0.4); 
+                
+                % Reset
+                highlight(obj.HGraph, actualFogIdx, 'NodeColor', [0.85 0.45 0.10], 'MarkerSize', 22);
+                highlight(obj.HGraph, sourceEdgeIdx, actualFogIdx, 'EdgeColor', [0.3 0.3 0.35], 'LineWidth', 1.2);
             else
-                % DATA SAFE: Fog -> Cloud Broadcast (Cyan)
+                % Passed Fog, Hash sent to Cloud
                 cloudIdx = obj.NumEdge + obj.NumFog + 1 : obj.NumEdge + obj.NumFog + obj.NumCloud;
-                highlight(obj.HGraph, actualFogIdx, cloudIdx, 'EdgeColor', 'c', 'LineWidth', 3);
-                pause(0.15);
                 
-                % Cloud -> Cloud Consensus Pulse (Magenta)
-                highlight(obj.HGraph, cloudIdx, cloudIdx([2:end, 1]), 'EdgeColor', 'm', 'LineWidth', 4);
-                pause(0.3);
+                highlight(obj.HGraph, sourceEdgeIdx, actualFogIdx, 'EdgeColor', [0 1 0.5], 'LineWidth', 2);
+                highlight(obj.HGraph, actualFogIdx, cloudIdx, 'EdgeColor', [0 1 1], 'LineWidth', 3); % Cyan Hash send
+                drawnow; pause(0.15);
                 
-                % Reset Cloud Ring
-                highlight(obj.HGraph, cloudIdx, cloudIdx([2:end, 1]), 'EdgeColor', [0.4 0.4 0.4], 'LineWidth', 1);
-                % Reset Fog-Cloud Broadcast lines
-                highlight(obj.HGraph, actualFogIdx, cloudIdx, 'EdgeColor', [0.4 0.4 0.4], 'LineWidth', 1);
+                % Cloud Consensus Ring Animation
+                if obj.NumCloud > 1
+                    highlight(obj.HGraph, cloudIdx, cloudIdx([2:end, 1]), 'EdgeColor', [0.8 0.2 0.8], 'LineWidth', 4); % Purple PBFT
+                    drawnow; pause(0.2);
+                    highlight(obj.HGraph, cloudIdx, cloudIdx([2:end, 1]), 'EdgeColor', [0.3 0.3 0.35], 'LineWidth', 1.2);
+                end
+                
+                % Reset All
+                highlight(obj.HGraph, actualFogIdx, cloudIdx, 'EdgeColor', [0.3 0.3 0.35], 'LineWidth', 1.2);
+                highlight(obj.HGraph, sourceEdgeIdx, actualFogIdx, 'EdgeColor', [0.3 0.3 0.35], 'LineWidth', 1.2);
             end
-            
-            % Reset the initial Edge -> Fog pulse line
-            highlight(obj.HGraph, sourceEdgeIdx, actualFogIdx, 'EdgeColor', [0.4 0.4 0.4], 'LineWidth', 1);
         end
     end
 end

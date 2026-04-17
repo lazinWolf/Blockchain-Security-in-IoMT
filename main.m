@@ -24,6 +24,14 @@ ui    = networkVis(config.numEdgeNodes, config.numFogNodes, config.numCloudNodes
 %% 2. RUN SIMULATION LOOP
 ui.printLog('[SYSTEM] Network Online. Commencing MQTT Data Flow...');
 
+% --- JVM WARMUP (Prevents Latency Spike on Packet 1) ---
+cryptoUtils.generateRecordID();
+cryptoUtils.simulateEncrypt(struct('HR', 75, 'SpO2', 98, 'Temp', 36.5));
+java.security.MessageDigest.getInstance('SHA-256');
+% -------------------------------------------------------
+
+ui.printLog('[SYSTEM] Network Online. Commencing MQTT Data Flow...');
+
 for t = 1:config.numTimeSteps
     activeSensorIdx = randi([1, config.numEdgeNodes]);
     activeSensor = sensors{activeSensorIdx};

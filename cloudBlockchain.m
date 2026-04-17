@@ -6,7 +6,7 @@ classdef cloudBlockchain < handle
     methods
         function obj = cloudBlockchain()
             genesis = struct('Index', 1, 'Timestamp', string(datetime('now')), ...
-                             'DataHash', 'GENESIS', 'PrevHash', '0000000000000000');
+                             'DataHash', 'GENESIS_HASH_00000', 'PrevHash', '0000000000000000');
             obj.Chain = genesis;
         end
         
@@ -15,7 +15,7 @@ classdef cloudBlockchain < handle
             newBlock = struct('Index', prevBlock.Index + 1, ...
                               'Timestamp', string(datetime('now')), ...
                               'DataHash', incomingHash, ...
-                              'PrevHash', hash256(prevBlock.DataHash));
+                              'PrevHash', prevBlock.DataHash); % FIXED: Direct pointer to previous hash
             obj.Chain(end+1) = newBlock;
         end
     end
