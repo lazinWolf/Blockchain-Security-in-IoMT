@@ -11,7 +11,7 @@ classdef securityUI < handle
             
             % Dropdowns
             uicontrol('Style','text','String','Select Fog:', 'Position',[20 440 80 20], 'BackgroundColor', 'w', 'FontWeight', 'bold');
-            fogLabels = {'[ALL FOGS]'};
+            fogLabels = {'[ALL]'};
             for i=1:length(obj.Tester.Fogs); fogLabels{end+1} = sprintf('Fog %d', i); end
             obj.FogDropdown = uicontrol('Style','popupmenu', 'Position',[100 440 120 25], 'String', fogLabels, 'Callback', @(~,~) obj.refreshRecords());
             
@@ -29,7 +29,7 @@ classdef securityUI < handle
             % Buttons
             uicontrol('Style','pushbutton','String','🚨 Tamper DB', 'Position',[20 20 160 30], 'Callback', @(~,~) obj.runTamper());
             uicontrol('Style','pushbutton','String','🛡️ Verify via Blockchain', 'Position',[195 20 160 30], 'Callback', @(~,~) obj.runVerify());
-            uicontrol('Style','pushbutton','String','🗑️ GDPR Delete', 'Position',[370 20 160 30], 'Callback', @(~,~) obj.runDelete());
+            uicontrol('Style','pushbutton','String','🗑️ Permanent Delete', 'Position',[370 20 160 30], 'Callback', @(~,~) obj.runDelete());
             
             obj.refreshRecords(); 
         end
